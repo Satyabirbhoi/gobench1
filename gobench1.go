@@ -1,3 +1,4 @@
+go
 package main
 
 import (
@@ -27,7 +28,6 @@ var (
 	clients          int
 	url              string
 	urlsFilePath     string
-	method           string
 	keepAlive        bool
 	postDataFilePath string
 	writeTimeout     int
@@ -37,30 +37,31 @@ var (
 	contentType      string
 	apiUserName      string
 	responseFileDir  string
+	method           string // Added method flag
 )
 
 // ResponseData is a struct to store the response data for each request.
 type ResponseData struct {
-	RequestNumber int64  `json:"requestNumber"`
-	StatusCode    int    `json:"statusCode"`
-	ResponseData  string `json:"responseData"`
+	RequestNumber int64    `json:"requestNumber"`
+	StatusCode    int      `json:"statusCode"`
+	ResponseData  []byte   `json:"responseData"`
 }
 
 // Configuration represents the configuration for load testing.
 type Configuration struct {
-	urls            []string
-	method          string
-	postData        []byte
-	requests        int64
-	period          int64
-	keepAlive       bool
-	Authorization   string
-	geolocation     string
-	contentType     string
-	apiUserName     string
+	urls           []string
+	method         string
+	postData       []byte
+	requests       int64
+	period         int64
+	keepAlive      bool
+	Authorization  string
+	geolocation    string
+	contentType    string
+	apiUserName    string
 	responseFileDir string
-	myClient        fasthttp.Client
-	responseFile    *os.File // Add a response file handle
+	myClient       fasthttp.Client
+	responseFile   *os.File // Add a response file handle
 }
 
 type Result struct {
@@ -102,9 +103,8 @@ func init() {
 	flag.IntVar(&clients, "c", 100, "Number of concurrent clients")
 	flag.StringVar(&url, "u", "", "URL")
 	flag.StringVar(&urlsFilePath, "f", "", "URL's file path (line separated)")
-	flag.StringVar(&method, "m", "GET", "HTTP method (GET, POST, PUT)")
 	flag.BoolVar(&keepAlive, "k", true, "Do HTTP keep-alive")
-	flag.StringVar(&postDataFilePath, "d", "", "HTTP POST/PUT data file path")
+	flag.StringVar(&postDataFilePath, "d", "", "HTTP POST data file path")
 	flag.Int64Var(&period, "t", -1, "Period of time (in seconds)")
 	flag.IntVar(&writeTimeout, "tw", 5000, "Write timeout (in milliseconds)")
 	flag.IntVar(&readTimeout, "tr", 5000, "Read timeout (in milliseconds)")
@@ -112,7 +112,8 @@ func init() {
 	flag.StringVar(&geolocation, "gl", "", "Geo Location Header")
 	flag.StringVar(&contentType, "ct", "", "Content type")
 	flag.StringVar(&apiUserName, "user", "", "API User Name")
-	flag.StringVar(&responseFileDir, "rsp", "", "Directory path to store response JSON files")
+	flag.StringVar(&responseFileDir, "rsp", "", "Directory path to store response json files")
+	flag.StringVar(&method, "m", "GET", "HTTP method (GET, POST, PUT)")
 }
 
 func printResults(results map[int]*Result, startTime time.Time) {
@@ -146,6 +147,7 @@ func printResults(results map[int]*Result, startTime time.Time) {
 }
 
 func readLines(path string) (lines []string, err error) {
+
 	var file *os.File
 	var part []byte
 	var prefix bool
@@ -193,17 +195,16 @@ func NewConfiguration() *Configuration {
 	}
 
 	configuration := &Configuration{
-		urls:            make([]string, 0),
-		method:          method,
-		postData:        nil,
-		keepAlive:       keepAlive,
-		requests:        int64((1 << 63) - 1),
-		Authorization:   Authorization,
-		geolocation:     geolocation,
-		contentType:     contentType,
-		apiUserName:     apiUserName,
-		responseFileDir: responseFileDir,
-	}
+		urls:       make([]string, 0),
+		method:     method, // Set method from flag
+		postData:   nil,
+		keepAlive:  keepAlive,
+		requests:   int64((1 << 63) - 1),
+		Authorization: Authorization,
+		geolocation: geolocation,
+		contentType: contentType,
+		apiUserName: apiUserName,
+		responseFileDir: responseFileDir}
 
 	if period != -1 {
 		configuration.period = period
@@ -238,7 +239,7 @@ func NewConfiguration() *Configuration {
 		fileLines, err := readLines(urlsFilePath)
 
 		if err != nil {
-			log.Fatalf("Error in ioutil.ReadFile for file: %s Error: %v", urlsFilePath, err)
+			log.Fatalf("Error in ioutil.ReadFile for file: %s Error: ", urlsFilePath, err)
 		}
 
 		configuration.urls = fileLines
@@ -249,21 +250,17 @@ func NewConfiguration() *Configuration {
 	}
 
 	if postDataFilePath != "" {
-		if method == "POST" || method == "PUT" {
-			data, err := ioutil.ReadFile(postDataFilePath)
+		configuration.method = "POST"
 
-			if err != nil {
-				log.Fatalf("Error in ioutil.ReadFile for file path: %s Error: %v", postDataFilePath, err)
-			}
+		data, err := ioutil.ReadFile(postDataFilePath)
 
-			configuration.postData = data
-		} else {
-			fmt.Println("HTTP method should be POST or PUT to use postDataFilePath")
-			flag.Usage()
-			os.Exit(1)
+		if err != nil {
+			log.Fatalf("Error in ioutil.ReadFile for file path: %s Error: ", postDataFilePath, err)
 		}
-	}
 
+		configuration.postData = data
+	}
+	
 	if configuration.responseFileDir != "" {
 		responseFile, err := os.OpenFile(filepath.Join(configuration.responseFileDir, "responses.json"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
@@ -297,4 +294,17 @@ func MyDialer() func(address string) (conn net.Conn, err error) {
 func client(configuration *Configuration, result *Result, done *sync.WaitGroup) {
 	for result.Requests < configuration.requests {
 		for _, tmpUrl := range configuration.urls {
-			req := fasth
+			
+
+			req := fasthttp.AcquireRequest()
+
+			req.SetRequestURI(tmpUrl)
+			req.Header.SetMethodBytes([]byte(configuration.method))
+
+			if configuration.keepAlive == true {
+				req.Header.Set("Connection", "keep-alive")
+			} else {
+				req.Header.Set("Connection", "close")
+			}
+			req.Header.Set("Authorization", "Basic YXhpcy1rYnMtY3NjLW9hdXRoMi1jbGllbnQ6YXhpcy1rYnMtY3NjLW9hdXRoMi1wYXNzd29yZA==")
+			req.Header.Set("geolocation", "eyJkZX
