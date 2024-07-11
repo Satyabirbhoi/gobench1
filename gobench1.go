@@ -342,10 +342,11 @@ func client(configuration *Configuration, result *Result, done *sync.WaitGroup) 
 						StatusCode:    statusCode,
 						ResponseData:  resp.Body(),
 					}
-					responseJSON, _ := json.Marshal(responseData)
+					decodedBody, err := base64.StdEncoding.DecodeString(responseData.Body)
+					responseJSON, _ := json.Marshal(decodedBody)
 
 					// Append the response to the file
-					_, err := configuration.responseFile.WriteString(string(responseJSON) + "\n")
+					_, err := configuration.responseFile.WriteString(string(decodedBody) + "\n")
 					if err != nil {
 						fmt.Println(err)
 						continue
@@ -365,10 +366,11 @@ func client(configuration *Configuration, result *Result, done *sync.WaitGroup) 
 						StatusCode:    statusCode,
 						ResponseData:  resp.Body(),
 					}
-					responseJSON, _ := json.Marshal(responseData)
+					decodedBody, err := base64.StdEncoding.DecodeString(responseData.Body)
+					responseJSON, _ := json.Marshal(decodedBody)
 
 					// Append the response to the file
-					_, err := configuration.responseFile.WriteString(string(responseJSON) + "\n")
+					_, err := configuration.responseFile.WriteString(string(decodedBody) + "\n")
 					if err != nil {
 						fmt.Println(err)
 						continue
