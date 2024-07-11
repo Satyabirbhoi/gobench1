@@ -306,4 +306,123 @@ func client(configuration *Configuration, result *Result, done *sync.WaitGroup) 
 				req.Header.Set("Connection", "close")
 			}
 			req.Header.Set("Authorization", "Basic YXhpcy1rYnMtY3NjLW9hdXRoMi1jbGllbnQ6YXhpcy1rYnMtY3NjLW9hdXRoMi1wYXNzd29yZA==")
-			req.Header.Set("geolocation", "eyJkZX
+			req.Header.Set("geolocation", "eyJkZXZpY2UiOiJXRUIiLCJsYXRpdHVkZSI6MjAuMzQxOTkzMywibG9uZ2l0dWRlIjo4NS44MDYyMTk2LCJjaXR5IjoiQmh1YmFuZXNod2FyIiwiY291bnRyeSI6IkluZGlhIiwiY29udGluZW50IjoiQXNpYSJ9")
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.SetBodyString("grant_type=password&username=acb123&password=123Itp")
+
+			if len(configuration.Authorization) > 0 {
+				req.Header.Set("Authorization", configuration.Authorization)
+				
+			}
+			
+			if len(configuration.geolocation) > 0 {
+				req.Header.Set("geolocation", configuration.geolocation)
+			}
+			
+			if len(configuration.contentType) > 0 {
+				req.Header.Set("Content-Type", configuration.contentType)
+			}	
+			if len(configuration.apiUserName) > 0 {
+				req.Header.Set("apiUserName", configuration.apiUserName)
+			}
+
+			req.SetBody(configuration.postData)
+
+			resp := fasthttp.AcquireResponse()
+			err := configuration.myClient.Do(req, resp)
+			statusCode := resp.StatusCode()
+			result.Requests++
+			
+
+			if err != nil {
+				result.NetworkFailed++
+				if configuration.responseFile != nil {
+					responseData := ResponseData{
+						RequestNumber: result.Requests,
+						StatusCode:    statusCode,
+						ResponseData:  resp.Body(),
+					}
+					responseJSON, _ := json.Marshal(responseData)
+
+					// Append the response to the file
+					_, err := configuration.responseFile.WriteString(string(responseJSON) + "\n")
+					if err != nil {
+						fmt.Println(err)
+						continue
+					}
+				}
+				continue
+			}
+
+			if statusCode >= fasthttp.StatusOK && statusCode <= fasthttp.StatusIMUsed  {
+				result.Success++
+				
+			} else {
+				result.BadFailed++
+				if configuration.responseFile != nil {
+					responseData := ResponseData{
+						RequestNumber: result.Requests,
+						StatusCode:    statusCode,
+						ResponseData:  resp.Body(),
+					}
+					responseJSON, _ := json.Marshal(responseData)
+
+					// Append the response to the file
+					_, err := configuration.responseFile.WriteString(string(responseJSON) + "\n")
+					if err != nil {
+						fmt.Println(err)
+						continue
+					}
+				}
+			}
+			
+			fasthttp.ReleaseRequest(req)
+			fasthttp.ReleaseResponse(resp)
+		}
+	}
+
+	done.Done()
+}
+
+
+var results map[int]*Result = make(map[int]*Result)
+
+var startTime time.Time
+
+func main() {
+
+	startTime = time.Now()
+	var done sync.WaitGroup
+	
+	signalChannel := make(chan os.Signal, 2)
+	signal.Notify(signalChannel, os.Interrupt)
+	go func() {
+		_ = <-signalChannel
+		printResults(results, startTime)
+		os.Exit(0)
+	}()
+
+	flag.Parse()
+
+	configuration := NewConfiguration()
+
+	goMaxProcs := os.Getenv("GOMAXPROCS")
+
+	if goMaxProcs == "" {
+		runtime.GOMAXPROCS(runtime.NumCPU())
+	}
+
+	fmt.Printf("Dispatching %d clients\n", clients)
+
+	done.Add(clients)
+	for i := 0; i < clients; i++ {
+		result := &Result{}
+		results[i] = result
+		go client(configuration, result, &done)
+
+	}
+	fmt.Println("Waiting for results...")
+	done.Wait()
+	fmt.Println("wait is done")
+	printResults(results, startTime)
+}
